@@ -15,7 +15,10 @@ on:
   workflow_dispatch:
 
 env:
-  SOLANA_VERSION: "1.18.15"
+  # Use latest stable Solana (Agave 2.x) — bundles cargo 1.81+ which reads lock file v4.
+  # anchor-cli 0.30.1 is still used to generate the IDL; cargo-build-sbf handles the
+  # actual BPF compilation from the stable toolchain.
+  SOLANA_VERSION: "stable"
   ANCHOR_VERSION: "0.30.1"
 
 jobs:
@@ -26,15 +29,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Need two Rust versions:
-      #   1.79.0 → compile anchor-cli (time v0.3.29 breaks on Rust >= 1.80)
-      #   stable → run anchor build / cargo build-sbf (edition2024 deps need >= 1.85)
-      - name: Install Rust 1.79.0 (for anchor-cli)
+      # anchor-cli 0.30.1 → time v0.3.29 → fails on Rust >= 1.80. Use 1.79 to compile it.
+      - name: Install Rust 1.79.0 (for anchor-cli compile)
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.79.0"
 
-      - name: Install Rust stable (for program build)
+      # Rust stable needed for cargo-build-sbf (edition2024 deps) and lock file v4.
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry
@@ -46,26 +48,21 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install Solana CLI
+      - name: Install Solana CLI (stable/latest)
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
       - name: Cache Solana platform-tools
         uses: actions/cache@v4
         with:
           path: ~/.local/share/solana/install/active_release/bin/sdk/sbf/dependencies
-          key: platform-tools-${{ env.SOLANA_VERSION }}
+          key: platform-tools-agave-stable-${{ hashFiles('Cargo.lock') }}
 
-      - name: Install Anchor CLI (built with Rust 1.79)
+      - name: Install Anchor CLI (compiled with Rust 1.79 to avoid time crate regression)
         run: cargo +1.79.0 install --git https://github.com/coral-xyz/anchor --tag v${{ env.ANCHOR_VERSION }} anchor-cli --locked
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: true
-
-      # cargo-build-sbf (Solana 1.18) bundles cargo ~1.77 which can't read lock file v4.
-      # Regenerate Cargo.lock as v3 using Rust 1.79 (v3 is the default before Rust 1.81).
-      - name: Regenerate Cargo.lock as v3
-        run: cargo +1.79.0 generate-lockfile
 
       - name: Build program
         run: anchor build
@@ -87,25 +84,20 @@ jobs:
             target/idl/nft_lending.json
           if-no-files-found: error
 
-      # Deploy to devnet only on push to main (not PRs)
+      # Deploy to devnet only on push to main (not PRs or workflow_dispatch)
       - name: Deploy to devnet
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          # Restore deployer keypair from secret
           echo "$DEPLOYER_KEYPAIR_B64" | base64 -d > /tmp/deployer.json
           solana config set --keypair /tmp/deployer.json --url devnet
 
-          # Airdrop SOL if balance is low
           BALANCE=$(solana balance --url devnet | awk '{print $1}')
           if (( $(echo "$BALANCE < 1" | bc -l) )); then
             solana airdrop 2 --url devnet || true
             sleep 5
           fi
 
-          # Deploy the program
           anchor deploy --provider.cluster devnet --provider.wallet /tmp/deployer.json
-
-          # Shred the keypair from runner
           rm /tmp/deployer.json
         env:
           DEPLOYER_KEYPAIR_B64: ${{ secrets.DEPLOYER_KEYPAIR_B64 }}
@@ -117,7 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
