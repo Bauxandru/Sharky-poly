@@ -12,6 +12,7 @@ on:
     paths:
       - "programs/**"
       - "Cargo.toml"
+  workflow_dispatch:
 
 env:
   SOLANA_VERSION: "1.18.15"
