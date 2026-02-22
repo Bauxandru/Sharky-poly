@@ -64,6 +64,12 @@ jobs:
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: true
 
+      # blake3 ≥1.8.0 sets `edition = "2024"` in its Cargo.toml, which Cargo < 1.85
+      # (Agave stable bundles 1.84) cannot parse.  Downgrade in the working-copy
+      # lock file using the system stable cargo before cargo-build-sbf runs.
+      - name: Pin blake3 to 1.7.0 (edition2024 compat)
+        run: cargo update -p blake3 --precise 1.7.0
+
       - name: Build program
         run: anchor build
 
