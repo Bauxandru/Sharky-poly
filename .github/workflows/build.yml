@@ -26,12 +26,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Anchor 0.30.1 depends on time v0.3.29 which fails to compile on Rust >= 1.80
-      # due to a type inference regression. Pin to 1.79.0.
-      - name: Install Rust 1.79.0
+      # Need two Rust versions:
+      #   1.79.0 → compile anchor-cli (time v0.3.29 breaks on Rust >= 1.80)
+      #   stable → run anchor build / cargo build-sbf (edition2024 deps need >= 1.85)
+      - name: Install Rust 1.79.0 (for anchor-cli)
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.79.0"
+
+      - name: Install Rust stable (for program build)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -53,8 +57,8 @@ jobs:
           path: ~/.local/share/solana/install/active_release/bin/sdk/sbf/dependencies
           key: platform-tools-${{ env.SOLANA_VERSION }}
 
-      - name: Install Anchor CLI
-        run: cargo install --git https://github.com/coral-xyz/anchor --tag v${{ env.ANCHOR_VERSION }} anchor-cli --locked
+      - name: Install Anchor CLI (built with Rust 1.79)
+        run: cargo +1.79.0 install --git https://github.com/coral-xyz/anchor --tag v${{ env.ANCHOR_VERSION }} anchor-cli --locked
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: true
 
