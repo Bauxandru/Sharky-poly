@@ -1,0 +1,100 @@
+name: Build Solana Program
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "programs/**"
+      - "Cargo.toml"
+      - "Anchor.toml"
+  pull_request:
+    paths:
+      - "programs/**"
+      - "Cargo.toml"
+
+env:
+  SOLANA_VERSION: "1.18.15"
+  ANCHOR_VERSION: "0.30.1"
+  RUST_TOOLCHAIN: stable
+
+jobs:
+  build:
+    name: Build & Test Solana Program
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Anchor CLI
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor --tag v${{ env.ANCHOR_VERSION }} anchor-cli --locked
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: true
+
+      - name: Cache Solana platform-tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/solana/install/active_release/bin/sdk/sbf/dependencies
+          key: platform-tools-${{ env.SOLANA_VERSION }}
+
+      - name: Build program
+        run: anchor build
+
+      - name: Verify program size
+        run: |
+          SIZE=$(wc -c < target/deploy/nft_lending.so)
+          echo "Program size: $SIZE bytes"
+          if [ $SIZE -gt 1000000 ]; then
+            echo "WARNING: Program is larger than 1MB ($SIZE bytes)"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nft-lending-program
+          path: |
+            target/deploy/nft_lending.so
+            target/idl/nft_lending.json
+          if-no-files-found: error
+
+  check-indexer:
+    name: Check Indexer
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            indexer/target
+          key: ${{ runner.os }}-indexer-${{ hashFiles('indexer/Cargo.lock') }}
+
+      - name: cargo check indexer
+        run: cargo check
+        working-directory: indexer

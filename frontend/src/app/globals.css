@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #030712;
+  --foreground: #f9fafb;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Orderbook table rows */
+.order-row-lender {
+  @apply border-l-2 border-green-500 bg-green-950/20;
+}
+
+.order-row-borrower {
+  @apply border-l-2 border-red-500 bg-red-950/20;
+}
+
+/* Price/APR color coding */
+.apr-lender { @apply text-green-400; }
+.apr-borrower { @apply text-red-400; }
+.apr-mid { @apply text-yellow-400 font-bold; }

@@ -1,0 +1,29 @@
+# Claude Code internal files
+.claude/
+
+# Rust / Anchor
+target/
+.anchor/
+
+# Secrets
+.env
+*.env.local
+indexer/.env
+crank/.env
+
+# Keys – never commit real keypairs
+target/deploy/*-keypair.json
+
+# Node
+node_modules/
+frontend/.next/
+frontend/out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
