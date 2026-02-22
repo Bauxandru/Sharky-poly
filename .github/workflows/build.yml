@@ -62,6 +62,11 @@ jobs:
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: true
 
+      # cargo-build-sbf (Solana 1.18) bundles cargo ~1.77 which can't read lock file v4.
+      # Regenerate Cargo.lock as v3 using Rust 1.79 (v3 is the default before Rust 1.81).
+      - name: Regenerate Cargo.lock as v3
+        run: cargo +1.79.0 generate-lockfile
+
       - name: Build program
         run: anchor build
 
