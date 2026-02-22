@@ -1,4 +1,4 @@
-name: Build Solana Program
+name: Build & Deploy Solana Program
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
     paths:
       - "programs/**"
       - "Cargo.toml"
+      - "Cargo.lock"
       - "Anchor.toml"
   pull_request:
     paths:
@@ -15,11 +16,10 @@ on:
 env:
   SOLANA_VERSION: "1.18.15"
   ANCHOR_VERSION: "0.30.1"
-  RUST_TOOLCHAIN: stable
 
 jobs:
   build:
-    name: Build & Test Solana Program
+    name: Build & Deploy Solana Program
     runs-on: ubuntu-latest
 
     steps:
@@ -27,8 +27,6 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -44,17 +42,16 @@ jobs:
           sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      - name: Install Anchor CLI
-        run: |
-          cargo install --git https://github.com/coral-xyz/anchor --tag v${{ env.ANCHOR_VERSION }} anchor-cli --locked
-        env:
-          CARGO_NET_GIT_FETCH_WITH_CLI: true
-
       - name: Cache Solana platform-tools
         uses: actions/cache@v4
         with:
           path: ~/.local/share/solana/install/active_release/bin/sdk/sbf/dependencies
           key: platform-tools-${{ env.SOLANA_VERSION }}
+
+      - name: Install Anchor CLI
+        run: cargo install --git https://github.com/coral-xyz/anchor --tag v${{ env.ANCHOR_VERSION }} anchor-cli --locked
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: true
 
       - name: Build program
         run: anchor build
@@ -64,7 +61,7 @@ jobs:
           SIZE=$(wc -c < target/deploy/nft_lending.so)
           echo "Program size: $SIZE bytes"
           if [ $SIZE -gt 1000000 ]; then
-            echo "WARNING: Program is larger than 1MB ($SIZE bytes)"
+            echo "WARNING: Program is larger than 1MB"
           fi
 
       - name: Upload artifacts
@@ -75,6 +72,29 @@ jobs:
             target/deploy/nft_lending.so
             target/idl/nft_lending.json
           if-no-files-found: error
+
+      # Deploy to devnet only on push to main (not PRs)
+      - name: Deploy to devnet
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Restore deployer keypair from secret
+          echo "$DEPLOYER_KEYPAIR_B64" | base64 -d > /tmp/deployer.json
+          solana config set --keypair /tmp/deployer.json --url devnet
+
+          # Airdrop SOL if balance is low
+          BALANCE=$(solana balance --url devnet | awk '{print $1}')
+          if (( $(echo "$BALANCE < 1" | bc -l) )); then
+            solana airdrop 2 --url devnet || true
+            sleep 5
+          fi
+
+          # Deploy the program
+          anchor deploy --provider.cluster devnet --provider.wallet /tmp/deployer.json
+
+          # Shred the keypair from runner
+          rm /tmp/deployer.json
+        env:
+          DEPLOYER_KEYPAIR_B64: ${{ secrets.DEPLOYER_KEYPAIR_B64 }}
 
   check-indexer:
     name: Check Indexer
